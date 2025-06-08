@@ -6,6 +6,7 @@ import {
   getUser,
   updateTeamSubscription
 } from '@/lib/db/queries';
+import { isSubscriptionActive, getSubscriptionStatusText, subscriptionNeedsAttention } from '@/lib/payments/subscription-helpers';
 
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2025-04-30.basil'
@@ -13,10 +14,12 @@ export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 
 export async function createCheckoutSession({
   team,
-  priceId
+  priceId,
+  trialPeriodDays
 }: {
   team: Team | null;
   priceId: string;
+  trialPeriodDays: number;
 }) {
   const user = await getUser();
 
@@ -36,10 +39,11 @@ export async function createCheckoutSession({
     success_url: `${process.env.BASE_URL}/api/stripe/checkout?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${process.env.BASE_URL}/pricing`,
     customer: team.stripeCustomerId || undefined,
+    customer_email: team.stripeCustomerId ? undefined : user.email,
     client_reference_id: user.id.toString(),
     allow_promotion_codes: true,
     subscription_data: {
-      trial_period_days: 14
+      trial_period_days: trialPeriodDays
     }
   });
 
@@ -107,20 +111,17 @@ export async function createCustomerPortalSession(team: Team) {
     });
   }
 
-  return stripe.billingPortal.sessions.create({
-    customer: team.stripeCustomerId,
-    return_url: `${process.env.BASE_URL}/dashboard`,
-    configuration: configuration.id
-  });
+      return stripe.billingPortal.sessions.create({
+      customer: team.stripeCustomerId,
+      return_url: `${process.env.BASE_URL}/settings`,
+      configuration: configuration.id
+    });
 }
 
 export async function handleSubscriptionChange(
   subscription: Stripe.Subscription
 ) {
   const customerId = subscription.customer as string;
-  const subscriptionId = subscription.id;
-  const status = subscription.status;
-
   const team = await getTeamByStripeCustomerId(customerId);
 
   if (!team) {
@@ -128,22 +129,24 @@ export async function handleSubscriptionChange(
     return;
   }
 
-  if (status === 'active' || status === 'trialing') {
-    const plan = subscription.items.data[0]?.plan;
-    await updateTeamSubscription(team.id, {
-      stripeSubscriptionId: subscriptionId,
-      stripeProductId: plan?.product as string,
-      planName: (plan?.product as Stripe.Product).name,
-      subscriptionStatus: status
-    });
-  } else if (status === 'canceled' || status === 'unpaid') {
-    await updateTeamSubscription(team.id, {
-      stripeSubscriptionId: null,
-      stripeProductId: null,
-      planName: null,
-      subscriptionStatus: status
-    });
+  const { id: stripeSubscriptionId, status } = subscription;
+  const price = subscription.items.data[0]?.price;
+  let productId: string | null = null;
+  let planName: string | null = null;
+
+      // Get product info if subscription is active/valid  
+    if (isSubscriptionActive(status) && price?.product) {
+    const product = await stripe.products.retrieve(price.product as string);
+    productId = product.id;
+    planName = product.name;
   }
+
+  await updateTeamSubscription(team.id, {
+    stripeSubscriptionId: isSubscriptionActive(status) ? stripeSubscriptionId : null,
+    stripeProductId: productId,
+    planName: planName,
+    subscriptionStatus: status
+  });
 }
 
 export async function getStripePrices() {
@@ -153,15 +156,7 @@ export async function getStripePrices() {
     type: 'recurring'
   });
 
-  return prices.data.map((price) => ({
-    id: price.id,
-    productId:
-      typeof price.product === 'string' ? price.product : price.product.id,
-    unitAmount: price.unit_amount,
-    currency: price.currency,
-    interval: price.recurring?.interval,
-    trialPeriodDays: price.recurring?.trial_period_days
-  }));
+  return prices.data;
 }
 
 export async function getStripeProducts() {
@@ -179,4 +174,244 @@ export async function getStripeProducts() {
         ? product.default_price
         : product.default_price?.id
   }));
+}
+
+export async function getSubscriptionDetails(team: Team) {
+  if (!team.stripeCustomerId || !team.stripeSubscriptionId) {
+    return null;
+  }
+
+  try {
+    // Get subscription from Stripe
+    const subscription = await stripe.subscriptions.retrieve(
+      team.stripeSubscriptionId,
+      {
+        expand: ['items.data.price.product']
+      }
+    ) as Stripe.Subscription;
+
+    // Only return null if subscription doesn't exist or is permanently canceled/expired
+    if (!subscription || 
+        subscription.status === 'canceled' || 
+        subscription.status === 'incomplete_expired') {
+      return null;
+    }
+
+    const price = subscription.items.data[0]?.price;
+    const product = price?.product as Stripe.Product;
+
+    // Calculate trial days remaining
+    let trialDaysRemaining = 0;
+    if (subscription.trial_end && subscription.status === 'trialing') {
+      const trialEndDate = new Date(subscription.trial_end * 1000);
+      const now = new Date();
+      trialDaysRemaining = Math.max(0, Math.ceil((trialEndDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+    }
+
+    // Get next billing date from subscription item (Stripe API 2025-03-31.basil change)
+    const firstItem = subscription.items.data[0];
+    const nextBillingDate = firstItem?.current_period_end 
+      ? new Date(firstItem.current_period_end * 1000)
+      : null;
+    
+    let daysToNextDelivery = 0;
+    if (nextBillingDate) {
+      const now = new Date();
+      daysToNextDelivery = Math.max(0, Math.ceil((nextBillingDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+    }
+
+    // Get invoice history to calculate delivery statistics
+    let completedDeliveries = 0;
+    let totalAmountPaid = 0;
+    
+    try {
+      const invoices = await stripe.invoices.list({
+        customer: team.stripeCustomerId,
+        subscription: subscription.id,
+        status: 'paid',
+        limit: 100
+      });
+      
+      completedDeliveries = invoices.data.length;
+      totalAmountPaid = invoices.data.reduce((sum, invoice) => sum + (invoice.amount_paid || 0), 0);
+    } catch (invoiceError) {
+      console.warn('Error fetching invoice history:', invoiceError);
+    }
+
+    // Parse product metadata for features
+    let features: any = {};
+    if (product?.metadata) {
+      try {
+        features = JSON.parse(product.metadata.features || '{}');
+      } catch (e) {
+        console.warn('Failed to parse product features from metadata');
+      }
+    }
+
+    // Determine if subscription needs attention and get status text
+    const needsAttention = subscriptionNeedsAttention(subscription.status);
+    const statusText = getSubscriptionStatusText(subscription.status);
+
+    // Extract coffee amount from product metadata or name
+    let coffeeAmount = features.coffeeAmount || '0g';
+    if (!coffeeAmount || coffeeAmount === '0g') {
+      // Try to extract from product name (e.g., "Plan Base - 250g" -> "250g")
+      const match = product?.name?.match(/(\d+g)/);
+      if (match) {
+        coffeeAmount = match[1];
+      }
+    }
+
+    return {
+      id: subscription.id,
+      status: subscription.status,
+      statusText: statusText,
+      needsAttention,
+      productName: product?.name || 'Unknown Plan',
+      priceAmount: price?.unit_amount || 0,
+      currency: price?.currency?.toUpperCase() || 'MXN',
+      interval: price?.recurring?.interval || 'month',
+      trialDaysRemaining,
+      nextBillingDate,
+      daysToNextDelivery,
+      cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      features,
+      // Coffee-specific features from metadata
+      coffeeAmount,
+      deliveryFrequency: features.deliveryFrequency || 'monthly',
+      // Real delivery statistics
+      completedDeliveries,
+      totalAmountPaid: totalAmountPaid / 100, // Convert from cents
+      // Customer details
+      customerId: team.stripeCustomerId
+    };
+  } catch (error) {
+    console.error('Error fetching subscription details:', error);
+    return null;
+  }
+}
+
+export async function getCustomerInvoices(team: Team, limit: number = 10) {
+  if (!team.stripeCustomerId) {
+    return [];
+  }
+
+  try {
+    const invoices = await stripe.invoices.list({
+      customer: team.stripeCustomerId,
+      limit,
+      status: 'paid'
+    });
+
+    return invoices.data.map((invoice) => ({
+      id: invoice.id,
+      amount: invoice.amount_paid,
+      currency: invoice.currency?.toUpperCase() || 'MXN',
+      date: new Date(invoice.created * 1000),
+      status: invoice.status,
+      invoiceUrl: invoice.hosted_invoice_url,
+      pdfUrl: invoice.invoice_pdf
+    }));
+  } catch (error) {
+    console.error('Error fetching customer invoices:', error);
+    return [];
+  }
+}
+
+export async function getUnpaidInvoices(team: Team) {
+  if (!team.stripeCustomerId) {
+    return [];
+  }
+
+  try {
+    const invoices = await stripe.invoices.list({
+      customer: team.stripeCustomerId,
+      status: 'open',
+      limit: 10
+    });
+
+    return invoices.data.map((invoice) => ({
+      id: invoice.id,
+      amount: invoice.amount_due,
+      currency: invoice.currency?.toUpperCase() || 'MXN',
+      dueDate: invoice.due_date ? new Date(invoice.due_date * 1000) : null,
+      status: invoice.status,
+      hostedInvoiceUrl: invoice.hosted_invoice_url,
+      invoicePdf: invoice.invoice_pdf
+    }));
+  } catch (error) {
+    console.error('Error fetching unpaid invoices:', error);
+    return [];
+  }
+}
+
+export async function getLatestUnpaidInvoiceUrl(team: Team): Promise<string | null> {
+  if (!team.stripeCustomerId) {
+    return null;
+  }
+
+  try {
+    const invoices = await stripe.invoices.list({
+      customer: team.stripeCustomerId,
+      status: 'open',
+      limit: 1
+    });
+
+    if (invoices.data.length > 0) {
+      const invoice = invoices.data[0];
+      return invoice.hosted_invoice_url || null;
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error fetching latest unpaid invoice:', error);
+    return null;
+  }
+}
+
+export async function createUnpaidInvoicePaymentSession(team: Team) {
+  if (!team.stripeCustomerId) {
+    throw new Error('Missing customer ID');
+  }
+
+  try {
+    // Get the direct invoice URL - this is the best practice for unpaid invoices
+    const invoiceUrl = await getLatestUnpaidInvoiceUrl(team);
+    if (invoiceUrl) {
+      return { url: invoiceUrl };
+    }
+    
+    // If no unpaid invoice, fallback to regular portal
+    return await createCustomerPortalSession(team);
+  } catch (error) {
+    console.error('Error getting unpaid invoice URL:', error);
+    
+    // Final fallback to regular portal session
+    const portalSession = await createCustomerPortalSession(team);
+    return portalSession;
+  }
+}
+
+export async function reactivateSubscription(team: Team) {
+  if (!team.stripeSubscriptionId) {
+    throw new Error('Missing subscription ID');
+  }
+
+  try {
+    // Update the subscription to remove the cancel_at_period_end flag
+    const subscription = await stripe.subscriptions.update(
+      team.stripeSubscriptionId,
+      {
+        cancel_at_period_end: false
+      }
+    );
+
+    return {
+      success: true,
+      subscription
+    };
+  } catch (error) {
+    console.error('Error reactivating subscription:', error);
+    throw error;
+  }
 }

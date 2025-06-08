@@ -1,5 +1,6 @@
 import Stripe from 'stripe';
-import { handleSubscriptionChange, stripe } from '@/lib/payments/stripe';
+import { stripe } from '@/lib/payments/stripe';
+import { processWebhookEvent } from '@/lib/payments/webhook-handlers';
 import { NextRequest, NextResponse } from 'next/server';
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
@@ -20,15 +21,22 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  switch (event.type) {
-    case 'customer.subscription.updated':
-    case 'customer.subscription.deleted':
-      const subscription = event.data.object as Stripe.Subscription;
-      await handleSubscriptionChange(subscription);
-      break;
-    default:
-      console.log(`Unhandled event type ${event.type}`);
+  try {
+    await processWebhookEvent(event);
+    return NextResponse.json({ 
+      received: true, 
+      eventId: event.id,
+      eventType: event.type 
+    });
+  } catch (error) {
+    console.error('Error processing webhook event:', error);
+    return NextResponse.json(
+      { 
+        error: 'Error processing webhook event',
+        eventId: event.id,
+        eventType: event.type
+      },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json({ received: true });
 }

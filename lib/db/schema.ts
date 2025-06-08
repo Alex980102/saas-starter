@@ -68,6 +68,34 @@ export const invitations = pgTable('invitations', {
   status: varchar('status', { length: 20 }).notNull().default('pending'),
 });
 
+export const webhookEvents = pgTable('webhook_events', {
+  id: serial('id').primaryKey(),
+  stripeEventId: varchar('stripe_event_id', { length: 255 }).notNull().unique(),
+  eventType: varchar('event_type', { length: 100 }).notNull(),
+  processed: varchar('processed', { length: 20 }).notNull().default('pending'), // pending, success, failed
+  attempts: integer('attempts').notNull().default(0),
+  lastAttemptAt: timestamp('last_attempt_at'),
+  teamId: integer('team_id').references(() => teams.id),
+  errorMessage: text('error_message'),
+  eventData: text('event_data'), // JSON data for debugging
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  processedAt: timestamp('processed_at'),
+});
+
+export const subscriptionEvents = pgTable('subscription_events', {
+  id: serial('id').primaryKey(),
+  teamId: integer('team_id')
+    .notNull()
+    .references(() => teams.id),
+  eventType: varchar('event_type', { length: 50 }).notNull(), // status_change, payment_failed, trial_ending, etc.
+  previousStatus: varchar('previous_status', { length: 30 }),
+  newStatus: varchar('new_status', { length: 30 }),
+  stripeSubscriptionId: text('stripe_subscription_id'),
+  description: text('description'),
+  userNotified: varchar('user_notified', { length: 20 }).default('pending'), // pending, sent, failed
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
 export const teamsRelations = relations(teams, ({ many }) => ({
   teamMembers: many(teamMembers),
   activityLogs: many(activityLogs),
@@ -122,6 +150,10 @@ export type ActivityLog = typeof activityLogs.$inferSelect;
 export type NewActivityLog = typeof activityLogs.$inferInsert;
 export type Invitation = typeof invitations.$inferSelect;
 export type NewInvitation = typeof invitations.$inferInsert;
+export type WebhookEvent = typeof webhookEvents.$inferSelect;
+export type NewWebhookEvent = typeof webhookEvents.$inferInsert;
+export type SubscriptionEvent = typeof subscriptionEvents.$inferSelect;
+export type NewSubscriptionEvent = typeof subscriptionEvents.$inferInsert;
 export type TeamDataWithMembers = Team & {
   teamMembers: (TeamMember & {
     user: Pick<User, 'id' | 'name' | 'email'>;
@@ -139,4 +171,60 @@ export enum ActivityType {
   REMOVE_TEAM_MEMBER = 'REMOVE_TEAM_MEMBER',
   INVITE_TEAM_MEMBER = 'INVITE_TEAM_MEMBER',
   ACCEPT_INVITATION = 'ACCEPT_INVITATION',
+}
+
+export enum SubscriptionStatus {
+  INCOMPLETE = 'incomplete',
+  INCOMPLETE_EXPIRED = 'incomplete_expired',
+  TRIALING = 'trialing',
+  ACTIVE = 'active',
+  PAST_DUE = 'past_due',
+  CANCELED = 'canceled',
+  UNPAID = 'unpaid',
+  PAUSED = 'paused'
+}
+
+export enum WebhookEventType {
+  // Subscription events
+  SUBSCRIPTION_CREATED = 'customer.subscription.created',
+  SUBSCRIPTION_UPDATED = 'customer.subscription.updated',
+  SUBSCRIPTION_DELETED = 'customer.subscription.deleted',
+  SUBSCRIPTION_TRIAL_WILL_END = 'customer.subscription.trial_will_end',
+  
+  // Invoice events
+  INVOICE_CREATED = 'invoice.created',
+  INVOICE_FINALIZED = 'invoice.finalized',
+  INVOICE_PAID = 'invoice.paid',
+  INVOICE_PAYMENT_SUCCEEDED = 'invoice.payment_succeeded',
+  INVOICE_PAYMENT_FAILED = 'invoice.payment_failed',
+  INVOICE_UPCOMING = 'invoice.upcoming',
+  INVOICE_UPDATED = 'invoice.updated',
+  
+  // Payment events
+  CHARGE_FAILED = 'charge.failed',
+  CHARGE_SUCCEEDED = 'charge.succeeded',
+  PAYMENT_INTENT_CREATED = 'payment_intent.created',
+  PAYMENT_INTENT_SUCCEEDED = 'payment_intent.succeeded',
+  PAYMENT_INTENT_PAYMENT_FAILED = 'payment_intent.payment_failed',
+  
+  // Setup and payment method events
+  SETUP_INTENT_CREATED = 'setup_intent.created',
+  SETUP_INTENT_SUCCEEDED = 'setup_intent.succeeded',
+  PAYMENT_METHOD_ATTACHED = 'payment_method.attached',
+  
+  // Customer events
+  CUSTOMER_CREATED = 'customer.created',
+  CUSTOMER_UPDATED = 'customer.updated',
+  
+  // Checkout events
+  CHECKOUT_SESSION_COMPLETED = 'checkout.session.completed',
+}
+
+export enum SubscriptionEventType {
+  STATUS_CHANGE = 'status_change',
+  PAYMENT_FAILED = 'payment_failed',
+  PAYMENT_SUCCEEDED = 'payment_succeeded',
+  TRIAL_ENDING = 'trial_ending',
+  SUBSCRIPTION_CANCELED = 'subscription_canceled',
+  PAYMENT_METHOD_UPDATED = 'payment_method_updated',
 }

@@ -3,40 +3,47 @@ import type { Metadata, Viewport } from 'next';
 import { Manrope } from 'next/font/google';
 import { getUser, getTeamForUser } from '@/lib/db/queries';
 import { SWRConfig } from 'swr';
+import { Toaster } from 'sonner';
 
 export const metadata: Metadata = {
-  title: 'Next.js SaaS Starter',
-  description: 'Get started quickly with Next.js, Postgres, and Stripe.'
+  title: 'Acme Cafes',
+  description: 'Suscripciones de café de especialidad, directo a tu puerta.'
 };
 
 export const viewport: Viewport = {
-  maximumScale: 1
+  themeColor: 'light'
 };
 
-const manrope = Manrope({ subsets: ['latin'] });
+const manrope = Manrope({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-manrope'
+});
 
-export default function RootLayout({
+export default async function RootLayout({
   children
 }: {
   children: React.ReactNode;
 }) {
+  const user = await getUser();
+  const team = await getTeamForUser();
   return (
-    <html
-      lang="en"
-      className={`bg-white dark:bg-gray-950 text-black dark:text-white ${manrope.className}`}
-    >
-      <body className="min-h-[100dvh] bg-gray-50">
+    <html lang="en" className={manrope.variable}>
+      <body>
         <SWRConfig
           value={{
             fallback: {
-              // We do NOT await here
-              // Only components that read this data will suspend
-              '/api/user': getUser(),
-              '/api/team': getTeamForUser()
+              '/api/user': user,
+              '/api/team': team
             }
           }}
         >
           {children}
+          <Toaster
+            position="top-right"
+            richColors
+            closeButton
+          />
         </SWRConfig>
       </body>
     </html>

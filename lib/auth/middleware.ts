@@ -62,7 +62,17 @@ export function withTeam<T>(action: ActionWithTeamFunction<T>) {
   return async (formData: FormData): Promise<T> => {
     const user = await getUser();
     if (!user) {
-      redirect('/sign-in');
+      const priceId = formData.get('priceId');
+      const trialPeriodDays = formData.get('trialPeriodDays');
+      const params = new URLSearchParams();
+      params.append('redirect', 'checkout');
+      if (priceId) {
+        params.append('priceId', priceId as string);
+      }
+      if (trialPeriodDays) {
+        params.append('trialPeriodDays', trialPeriodDays as string);
+      }
+      redirect(`/sign-in?${params.toString()}`);
     }
 
     const team = await getTeamForUser();

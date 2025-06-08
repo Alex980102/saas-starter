@@ -7,4 +7,4 @@ export default function SignUpPage() {
       <Login mode="signup" />
     </Suspense>
   );
-}
+} 
