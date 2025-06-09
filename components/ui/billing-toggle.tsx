@@ -9,43 +9,62 @@ interface BillingToggleProps {
 
 export function BillingToggle({ interval, onIntervalChange }: BillingToggleProps) {
   return (
-    <div className="flex items-center justify-center gap-4 mb-8">
-      <span 
-        className={`text-sm font-medium transition-colors cursor-pointer ${
-          interval === 'month' ? 'text-gray-900' : 'text-gray-500 hover:text-gray-700'
-        }`}
-        onClick={() => onIntervalChange('month')}
-      >
-        Mensual
-      </span>
-      
-      <button
-        onClick={() => onIntervalChange(interval === 'month' ? 'year' : 'month')}
-        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 ${
-          interval === 'year' ? 'bg-orange-600' : 'bg-gray-200'
-        }`}
-      >
-        <span
-          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-            interval === 'year' ? 'translate-x-6' : 'translate-x-1'
+    <div className="flex flex-col items-center justify-center gap-4 mb-8">
+      {/* Toggle Container */}
+      <div className="flex items-center justify-center gap-4">
+        <button
+          onClick={() => onIntervalChange('month')}
+          className={`text-sm font-medium transition-all duration-200 px-3 py-1 rounded-md ${
+            interval === 'month' 
+              ? 'text-gray-900 bg-gray-100' 
+              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
           }`}
-        />
-      </button>
+          aria-pressed={interval === 'month'}
+        >
+          Mensual
+        </button>
+        
+        <div
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+            interval === 'year' ? 'bg-orange-600' : 'bg-gray-200'
+          }`}
+        >
+          <button
+            onClick={() => onIntervalChange(interval === 'month' ? 'year' : 'month')}
+            className="w-full h-full rounded-full focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2"
+            aria-label={`Cambiar a facturación ${interval === 'month' ? 'anual' : 'mensual'}`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ease-in-out ${
+                interval === 'year' ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+        
+        <button
+          onClick={() => onIntervalChange('year')}
+          className={`text-sm font-medium transition-all duration-200 px-3 py-1 rounded-md relative ${
+            interval === 'year' 
+              ? 'text-gray-900 bg-gray-100' 
+              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+          }`}
+          aria-pressed={interval === 'year'}
+        >
+          Anual
+        </button>
+      </div>
       
-      <span 
-        className={`text-sm font-medium transition-colors cursor-pointer ${
-          interval === 'year' ? 'text-gray-900' : 'text-gray-500 hover:text-gray-700'
-        }`}
-        onClick={() => onIntervalChange('year')}
-      >
-        Anual
-      </span>
-      
-      {interval === 'year' && (
-        <Badge className="bg-green-100 text-green-800 border-green-200">
-          Ahorra 20%
+      {/* Badge with smooth transition */}
+      <div className={`transition-all duration-300 ease-in-out ${
+        interval === 'year' 
+          ? 'opacity-100 transform translate-y-0' 
+          : 'opacity-0 transform -translate-y-2 pointer-events-none'
+      }`}>
+        <Badge className="bg-green-100 text-green-800 border-green-200 font-medium">
+          ✨ Ahorra 20%
         </Badge>
-      )}
+      </div>
     </div>
   );
 } 
