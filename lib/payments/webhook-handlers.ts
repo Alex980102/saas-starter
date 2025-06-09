@@ -14,7 +14,7 @@ import { eq, and } from 'drizzle-orm';
 import { 
   getTeamByStripeCustomerId, 
   updateTeamSubscription 
-} from '@/lib/db/queries';
+} from '@/lib/db/auth-queries';
 import { stripe } from './stripe';
 import { isSubscriptionActive } from './subscription-helpers';
 

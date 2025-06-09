@@ -1,7 +1,7 @@
 import './globals.css';
 import type { Metadata, Viewport } from 'next';
 import { Manrope } from 'next/font/google';
-import { getUser, getTeamForUser } from '@/lib/db/queries';
+import { getUser, getTeamForUser } from '@/lib/db/auth-queries';
 import { SWRConfig } from 'swr';
 import { Toaster } from 'sonner';
 

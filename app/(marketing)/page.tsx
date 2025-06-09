@@ -1,10 +1,14 @@
+'use client';
+
 import { Coffee, Package, Truck, Star, Check, ArrowRight, Users, Shield, Clock } from 'lucide-react';
 import Link from 'next/link';
-import { getStripePrices } from '@/lib/payments/stripe';
-import Stripe from 'stripe';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { BillingToggle } from '@/components/ui/billing-toggle';
+import { PricingCardSkeleton } from '@/components/ui/pricing-card-skeleton';
 import { checkoutAction } from '@/lib/payments/actions';
+import { useState, useEffect } from 'react';
+import type { ProductWithPrices } from '@/lib/db/schema';
 
 const testimonials = [
   {
@@ -53,12 +57,46 @@ const faqs = [
   }
 ];
 
-export default async function LandingPage() {
-  const prices = await getStripePrices();
-  const sortedPrices = prices.sort(
-    (a, b) => (a.unit_amount || 0) - (b.unit_amount || 0)
-  );
+export default function LandingPage() {
+  const [billingInterval, setBillingInterval] = useState<'month' | 'year'>('month');
+  const [products, setProducts] = useState<ProductWithPrices[]>([]);
+  const [loading, setLoading] = useState(true);
   
+  useEffect(() => {
+    async function fetchProducts() {
+      try {
+        const response = await fetch('/api/products');
+        if (response.ok) {
+          const data = await response.json();
+          setProducts(data);
+        } else {
+          console.error('Failed to fetch products');
+        }
+      } catch (error) {
+        console.error('Error fetching products:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchProducts();
+  }, []);
+  
+  // Filtrar productos por intervalo de facturación
+  const currentProducts = products.map(product => ({
+    ...product,
+    prices: product.prices.filter(price => price.interval === billingInterval)
+  })).filter(product => product.prices.length > 0);
+
+  // Ordenar por precio
+  const sortedProducts = currentProducts.sort((a, b) => {
+    const priceA = a.prices[0]?.unitAmount || 0;
+    const priceB = b.prices[0]?.unitAmount || 0;
+    return priceA - priceB;
+  });
+
+  // Eliminamos el loading completo de la página
+
   return (
     <main className="min-h-screen">
       {/* Hero Section */}
@@ -199,12 +237,12 @@ export default async function LandingPage() {
                   </div>
                 </div>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-3">Elige tu Plan</h3>
+              <h3 className="text-xl font-semibold text-gray-900 mb-3">Elige tu plan</h3>
               <p className="text-gray-600">
-                Selecciona la suscripción que mejor se adapte a tu consumo y preferencias de café.
+                Selecciona la suscripción que mejor se adapte a tu consumo de café. Siempre puedes cambiar después.
               </p>
             </div>
-            
+
             <div className="relative text-center">
               <div className="flex justify-center mb-6">
                 <div className="relative">
@@ -216,64 +254,28 @@ export default async function LandingPage() {
                   </div>
                 </div>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-3">Recibe Café Fresco</h3>
+              <h3 className="text-xl font-semibold text-gray-900 mb-3">Nosotros seleccionamos</h3>
               <p className="text-gray-600">
-                Tostamos los granos justo antes del envío para garantizar la máxima frescura y sabor.
+                Nuestros expertos catadores eligen los mejores granos de la temporada y los tuestan especialmente para ti.
               </p>
             </div>
-            
+
             <div className="relative text-center">
               <div className="flex justify-center mb-6">
                 <div className="relative">
                   <div className="w-20 h-20 bg-orange-600 rounded-2xl flex items-center justify-center shadow-lg">
-                    <Star className="w-10 h-10 text-white" />
+                    <Truck className="w-10 h-10 text-white" />
                   </div>
                   <div className="absolute -top-2 -right-2 w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
                     <span className="text-sm font-bold text-orange-600">3</span>
                   </div>
                 </div>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-3">Disfruta</h3>
+              <h3 className="text-xl font-semibold text-gray-900 mb-3">Disfruta en casa</h3>
               <p className="text-gray-600">
-                Prepara y disfruta de una experiencia de café excepcional desde la comodidad de tu hogar.
+                Recibe tu café fresco cada mes en tu puerta, con guías de preparación para la experiencia perfecta.
               </p>
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Testimonials Section */}
-      <section className="py-20 md:py-32 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold text-gray-900 sm:text-4xl mb-4">
-              Lo que dicen nuestros clientes
-            </h2>
-            <p className="text-xl text-gray-600">
-              Más de 2,500 personas ya disfrutan del mejor café cada día
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {testimonials.map((testimonial, index) => (
-              <div key={index} className="bg-gray-50 rounded-2xl p-8 border border-gray-100">
-                <div className="flex items-center gap-1 mb-4">
-                  {[1,2,3,4,5].map((star) => (
-                    <Star key={star} className="w-5 h-5 fill-yellow-400 text-yellow-400" />
-                  ))}
-                </div>
-                <p className="text-gray-700 mb-6 italic">"{testimonial.content}"</p>
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-orange-600 rounded-full flex items-center justify-center">
-                    <span className="text-white font-semibold">{testimonial.avatar}</span>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-gray-900">{testimonial.name}</p>
-                    <p className="text-sm text-gray-600">{testimonial.role}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       </section>
@@ -291,6 +293,12 @@ export default async function LandingPage() {
             </p>
           </div>
 
+          {/* Billing Toggle */}
+          <BillingToggle 
+            interval={billingInterval} 
+            onIntervalChange={setBillingInterval} 
+          />
+
           {/* Limited Time Offer Banner */}
           <div className="bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-2xl p-6 mb-12 text-center max-w-4xl mx-auto">
             <div className="flex items-center justify-center gap-2 mb-2">
@@ -305,14 +313,23 @@ export default async function LandingPage() {
             </p>
           </div>
           
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-5xl mx-auto">
-            {sortedPrices.map((price, index) => {
-              const product = price.product as Stripe.Product;
+          {loading ? (
+            <PricingCardSkeleton />
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-5xl mx-auto">
+              {sortedProducts.map((product, index) => {
+              const price = product.prices[0]; // Solo un precio por intervalo
               const isPopular = index === 1;
-              const features = product.metadata.features?.split(';') || [];
+              let features: string[] = [];
+              
+              try {
+                features = product.features ? JSON.parse(product.features) : [];
+              } catch (e) {
+                features = product.features ? product.features.split(';') : [];
+              }
               
               return (
-                <div key={price.id} className="relative">
+                <div key={product.id} className="relative">
                   {isPopular && (
                     <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 z-10">
                       <Badge className="bg-gradient-to-r from-orange-600 to-red-600 text-white px-6 py-2 text-sm font-semibold">
@@ -331,16 +348,21 @@ export default async function LandingPage() {
                       </h3>
                       <div className="mb-4">
                         <span className="text-5xl font-bold text-gray-900">
-                          ${price.unit_amount ? Math.floor(price.unit_amount / 100) : 0}
+                          ${Math.floor(price.unitAmount / 100)}
                         </span>
                         <span className="text-xl text-gray-500 ml-2">
-                          MXN/mes
+                          MXN/{billingInterval === 'month' ? 'mes' : 'año'}
                         </span>
+                        {billingInterval === 'year' && (
+                          <div className="text-sm text-green-600 font-medium mt-1">
+                            Ahorras ${Math.floor((price.unitAmount * 12 * 0.25) / 100)} MXN/año
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center justify-center gap-2 text-sm">
                         <Clock className="w-4 h-4 text-green-500" />
                         <span className="text-green-700 font-medium">
-                          {price.recurring?.trial_period_days || 0} días gratis
+                          {price.trialPeriodDays} días gratis
                         </span>
                       </div>
                     </div>
@@ -355,8 +377,8 @@ export default async function LandingPage() {
                     </ul>
 
                     <form action={checkoutAction} className="w-full">
-                      <input type="hidden" name="priceId" value={price.id} />
-                      <input type="hidden" name="trialPeriodDays" value={price.recurring?.trial_period_days || 0} />
+                      <input type="hidden" name="priceId" value={price.stripePriceId} />
+                      <input type="hidden" name="trialPeriodDays" value={price.trialPeriodDays || 0} />
                       <Button 
                         type="submit"
                         className={`w-full h-12 text-lg font-semibold rounded-lg transition-all duration-200 ${
@@ -377,7 +399,8 @@ export default async function LandingPage() {
                 </div>
               );
             })}
-          </div>
+            </div>
+          )}
 
           <div className="text-center mt-16">
             <div className="bg-white rounded-2xl p-8 max-w-2xl mx-auto shadow-sm border border-gray-200">

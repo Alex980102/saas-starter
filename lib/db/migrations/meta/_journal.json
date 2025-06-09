@@ -15,6 +15,13 @@
       "when": 1749407831926,
       "tag": "0001_closed_vulcan",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1749428419966,
+      "tag": "0002_nervous_thunderbolt",
+      "breakpoints": true
     }
   ]
 }

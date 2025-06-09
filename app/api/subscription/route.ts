@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getTeamForUser, getUser } from '@/lib/db/queries';
+import { getTeamForUser, getUser } from '@/lib/db/auth-queries';
 import { getSubscriptionDetails } from '@/lib/payments/stripe';
 
 export async function GET() {

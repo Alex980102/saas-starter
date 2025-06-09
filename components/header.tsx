@@ -90,7 +90,7 @@ function Navigation() {
   const pathname = usePathname();
   
   const navItems = [
-    { href: '/pricing', label: 'Pricing' },
+    { href: '/pricing', label: 'Planes' },
   ];
 
   return (

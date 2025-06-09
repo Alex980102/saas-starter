@@ -5,7 +5,7 @@ import {
   getTeamByStripeCustomerId,
   getUser,
   updateTeamSubscription
-} from '@/lib/db/queries';
+} from '@/lib/db/auth-queries';
 import { isSubscriptionActive, getSubscriptionStatusText, subscriptionNeedsAttention } from '@/lib/payments/subscription-helpers';
 
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -134,11 +134,23 @@ export async function handleSubscriptionChange(
   let productId: string | null = null;
   let planName: string | null = null;
 
-      // Get product info if subscription is active/valid  
-    if (isSubscriptionActive(status) && price?.product) {
-    const product = await stripe.products.retrieve(price.product as string);
-    productId = product.id;
-    planName = product.name;
+  // Get product info if subscription is active/valid  
+  if (isSubscriptionActive(status) && price?.product) {
+    const stripeProductId = price.product as string;
+    
+    // Try to get product from local database first
+    const { getProductByStripeId } = await import('@/lib/db/auth-queries');
+    const localProduct = await getProductByStripeId(stripeProductId);
+    
+    if (localProduct) {
+      productId = localProduct.stripeProductId;
+      planName = localProduct.name;
+    } else {
+      // Fallback to Stripe API if not found locally
+      const product = await stripe.products.retrieve(stripeProductId);
+      productId = product.id;
+      planName = product.name;
+    }
   }
 
   await updateTeamSubscription(team.id, {
@@ -174,6 +186,18 @@ export async function getStripeProducts() {
         ? product.default_price
         : product.default_price?.id
   }));
+}
+
+// Función para obtener productos con precios desde la base de datos local
+export async function getProductsWithPrices() {
+  const { getProducts } = await import('@/lib/db/auth-queries');
+  return await getProducts();
+}
+
+// Función para obtener productos filtrados por intervalo de facturación
+export async function getProductsByInterval(interval: 'month' | 'year') {
+  const { getProductsWithPricesByInterval } = await import('@/lib/db/auth-queries');
+  return await getProductsWithPricesByInterval(interval);
 }
 
 export async function getSubscriptionDetails(team: Team) {
