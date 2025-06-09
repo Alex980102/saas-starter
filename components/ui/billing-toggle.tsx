@@ -24,23 +24,19 @@ export function BillingToggle({ interval, onIntervalChange }: BillingToggleProps
           Mensual
         </button>
         
-        <div
-          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+        <button
+          onClick={() => onIntervalChange(interval === 'month' ? 'year' : 'month')}
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 ${
             interval === 'year' ? 'bg-orange-600' : 'bg-gray-200'
           }`}
+          aria-label={`Cambiar a facturación ${interval === 'month' ? 'anual' : 'mensual'}`}
         >
-          <button
-            onClick={() => onIntervalChange(interval === 'month' ? 'year' : 'month')}
-            className="w-full h-full rounded-full focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2"
-            aria-label={`Cambiar a facturación ${interval === 'month' ? 'anual' : 'mensual'}`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ease-in-out ${
-                interval === 'year' ? 'translate-x-6' : 'translate-x-1'
-              }`}
-            />
-          </button>
-        </div>
+          <span
+            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ease-in-out ${
+              interval === 'year' ? 'translate-x-6' : 'translate-x-1'
+            }`}
+          />
+        </button>
         
         <button
           onClick={() => onIntervalChange('year')}
